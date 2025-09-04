@@ -1,48 +1,47 @@
-import { FlatCompat } from "@eslint/eslintrc";
+// eslint.config.js
+import js from "@eslint/js";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
-const compat = new FlatCompat({
-  baseDirectory: import.meta.dirname,
-});
-
-export default tseslint.config(
+export default [
   {
-    ignores: [".next"],
-  },
-  ...compat.extends("next/core-web-vitals"),
-  {
-    files: ["**/*.ts", "**/*.tsx"],
-    extends: [
-      ...tseslint.configs.recommended,
-      ...tseslint.configs.recommendedTypeChecked,
-      ...tseslint.configs.stylisticTypeChecked,
+    ignores: [
+      "**/.next/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.turbo/**",
+      "**/coverage/**",
+      "**/node_modules/**",
     ],
-    rules: {
-      "@typescript-eslint/array-type": "off",
-      "@typescript-eslint/consistent-type-definitions": "off",
-      "@typescript-eslint/consistent-type-imports": [
-        "warn",
-        { prefer: "type-imports", fixStyle: "inline-type-imports" },
-      ],
-      "@typescript-eslint/no-unused-vars": [
-        "warn",
-        { argsIgnorePattern: "^_" },
-      ],
-      "@typescript-eslint/require-await": "off",
-      "@typescript-eslint/no-misused-promises": [
-        "error",
-        { checksVoidReturn: { attributes: false } },
-      ],
-    },
   },
+
+  js.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+
   {
-    linterOptions: {
-      reportUnusedDisableDirectives: true,
-    },
+    files: ["**/*.{ts,tsx,js,jsx}"],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: true, // ESLint v9+
+        tsconfigRootDir: import.meta.dirname,
       },
+      globals: { ...globals.browser, ...globals.node },
+    },
+    settings: { "import/resolver": { typescript: true }, react: { version: "detect" } },
+    rules: {
+      // Tailwind
+      "tailwindcss/classnames-order": "warn",
+      "tailwindcss/no-custom-classname": "off",
+
+      // TS niceties
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+
+      // Hooks
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
-);
+];

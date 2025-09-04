@@ -5,6 +5,10 @@
 import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
-const config = {};
-
-export default config;
+const nextConfig = {
+  experimental: {
+    externalDir: true, // allow importing from ../../packages
+  },
+  transpilePackages: ["@sam-chat/locations"], // transpile TS source from the package
+};
+export default nextConfig;

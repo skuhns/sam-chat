@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* ---- Your design tokens ---- */
+@theme {
+  --font-sans: var(--font-inter), system-ui, -apple-system, Segoe UI, sans-serif;
+  --font-display: var(--font-satoshi), system-ui, -apple-system, Segoe UI, sans-serif;
+  --font-mono:
+    var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --color-base: #0f0e0e; /* main background */
+  --color-base-2: #1c1b1a; /* section contrast */
+  --color-neutral-50: #e6e2dc;
+  --color-neutral-300: #b9b1a7;
+  --color-neutral-600: #5c5a57;
+
+  --color-amber: #d97706;
+  --color-moss: #a3be8c;
+  --color-clay: #e07a5f;
+  --color-teal: #468189;
+
+  --default-border-color: var(--color-neutral-600);
+}
+
+/* ---- Global base ---- */
+html,
+body {
+  height: 100%;
+}
+
+/* Global app gradient on body */
+body {
+  background-color: var(--color-base);
+  color: var(--color-neutral-50);
+  /* Subtle layered gradient, very low-contrast; respects prefers-reduced-motion */
+  background-image:
+    radial-gradient(
+      1000px 700px at 15% -10%,
+      color-mix(in oklab, var(--color-base) 96%, white 4%),
+      transparent 70%
+    ),
+    radial-gradient(
+      800px 500px at 110% 0%,
+      color-mix(in oklab, var(--color-base-2) 94%, white 6%),
+      transparent 65%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* Typography defaults */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+h1 {
+  @apply text-4xl font-bold tracking-tight md:text-5xl;
+}
+h2 {
+  @apply text-2xl font-medium md:text-3xl;
+}
+h3 {
+  @apply text-xl font-medium md:text-2xl;
+}
+p {
+  @apply text-base leading-7;
+}
+
+/* Links: moss → amber */
+a {
+  @apply text-moss hover:text-amber underline-offset-2 transition-colors;
+}
+
+/* Dividers */
+hr {
+  @apply border-neutral-600/50;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-moss);
+  color: var(--color-base);
+}
