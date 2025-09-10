@@ -76,42 +76,33 @@ export type LayoutOverrides = Record<
 export interface LocationConfig {
   key: LocationKey;
   label: string;
-  /** Default camera for background */
   camera: Camera;
-
-  /**
-   * Which layers should be visible for this location.
-   * If omitted, we'll default to "contours only" (see DEFAULT_CONTOURS_POLICY below).
-   */
   layers?: LayerPolicy;
-  /** Optional paint/layout overrides per location */
   paintOverrides?: PaintOverrides;
   layoutOverrides?: LayoutOverrides;
 }
 
-/** Default: (keeps background quiet/nice) */
-
 export const DEFAULT_POLICY: LayerPolicy = {
-  deny: ["Contour labels", "Glacier contour labels"],
-  allow: ["Lake labels", "Water", "Major road", "Forest"],
-  test: (id) => id.toLowerCase().includes("contour"),
-  defaultVisibility: false,
+  // deny: ["Contour labels", "Glacier contour labels"],
+  // allow: ["Lake labels", "Water", "Major road", "Forest"],
+  // test: (id) => id.toLowerCase().includes("contour"),
+  defaultVisibility: true,
 };
 
 export const DEFAULT_PAINT: PaintOverrides = {
-  Water: {
-    "fill-color": "#5c5a57",
-    "fill-opacity": 0.2,
-  },
-  Forest: {
-    "fill-color": "#5c5a57",
-    "fill-opacity": 1,
-  },
-  "Major road": {
-    "line-color": "#5c5a57",
-    "line-opacity": 0.4,
-    "line-width": 0.775,
-  },
+  // Water: {
+  //   "fill-color": "#5c5a57",
+  //   "fill-opacity": 0.2,
+  // },
+  // Forest: {
+  //   "fill-color": "#5c5a57",
+  //   "fill-opacity": 1,
+  // },
+  // "Major road": {
+  //   "line-color": "#5c5a57",
+  //   "line-opacity": 0.4,
+  //   "line-width": 0.775,
+  // },
 };
 
 function matches(id: string, m: LayerMatcher): boolean {
@@ -131,17 +122,9 @@ export function decideLayerVisibility(
   if (!policy) return "unchanged";
 
   const { allow, deny, test, defaultVisibility = "style" } = policy;
-
-  // 1) allow wins
   if (allow?.some((m) => matches(layerId, m))) return "visible";
-
-  // 2) deny next
   if (deny?.some((m) => matches(layerId, m))) return "none";
-
-  // 3) predicate
   if (typeof test === "function") return test(layerId) ? "visible" : "none";
-
-  // 4) fallback
   if (defaultVisibility === "style") return "unchanged";
   return defaultVisibility ? "visible" : "none";
 }
@@ -150,11 +133,10 @@ export const LOCATIONS: Record<LocationKey, LocationConfig> = {
   chicago: {
     key: "chicago",
     label: "Chicago, IL",
-    camera: { lat: 41.8788, lng: -87.6398, zoom: 11 },
+    camera: { lat: 41.8788, lng: -87.6398, zoom: 12 },
     layers: DEFAULT_POLICY,
     paintOverrides: DEFAULT_PAINT,
   },
-
   tetons: {
     key: "tetons",
     label: "Teton Range",

@@ -1,0 +1,6 @@
+Steps to get topo data layer
+download TOPO data from https://apps.nationalmap.gov/downloader/
+
+gdal_contour -a elev -i 10 chicago.tif chicago.geojson  
+ tippecanoe -o chicago_contour.mbtiles -l contour chicago.geojson  
+./pmtiles convert chicago_contour.mbtiles chicago_contour.pmtiles
