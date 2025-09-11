@@ -114,7 +114,8 @@ export default function BackgroundMap({
       className="fixed inset-0 "
       style={{ filter: blurPx ? `blur(${blurPx}px)` : undefined }}
     >
-      <div id="bgmap" ref={containerRef} className="h-full w-full" />
+      <div id="bgmap" ref={containerRef} className="h-full w-full" >
+      </div>
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -122,7 +123,8 @@ export default function BackgroundMap({
             `linear-gradient(0deg, rgba(0,0,0,${darken}), rgba(0,0,0,${darken})),` +
             `radial-gradient(1200px 800px at 50% -20%, rgba(0,0,0,0.25), transparent 70%)`,
         }}
-      />
+      >
+      </div>
     </div>
   );
 }
