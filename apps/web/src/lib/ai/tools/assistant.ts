@@ -1,9 +1,9 @@
 import { parse } from "partial-json";
 import useConversationStore from "stores/useConversationStore";
 import useToolsStore, { type ToolsState } from "stores/useToolsStore";
-// import { Annotation } from "@/components/annotations";
 import { functionsMap } from "config/functions";
 import { handleTool } from "./tools-handling";
+import type { Annotation } from "components/chat/annotations";
 
 const normalizeAnnotation = (annotation: any): Annotation => ({
   ...annotation,

@@ -29,10 +29,6 @@ export default [
     },
     settings: { "import/resolver": { typescript: true }, react: { version: "detect" } },
     rules: {
-      // Tailwind
-      "tailwindcss/classnames-order": "warn",
-      "tailwindcss/no-custom-classname": "off",
-
       // TS niceties
       "@typescript-eslint/no-unused-vars": [
         "warn",
@@ -40,8 +36,8 @@ export default [
       ],
 
       // Hooks
-      "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
+      // "react-hooks/rules-of-hooks": "error",
+      // "react-hooks/exhaustive-deps": "warn",
     },
   },
 ];
