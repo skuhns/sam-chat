@@ -3,80 +3,114 @@ from .utils import to_str
 import re
 import pandas as pd
 import numpy as np
-import math
+import re
 
-def find_rectangles(df: pd.DataFrame, min_rows: int = 2, min_cols: int = 2) -> List[Tuple[int, int, int, int, Optional[str]]]:
+Rect = Tuple[int, int, int, int] 
+
+def _contiguous_segments(bools: List[bool]) -> List[Tuple[int,int]]:
+    """Return [ (start,end) ] for contiguous True runs in a boolean list."""
+    segs: List[Tuple[int,int]] = []
+    s = None
+    for i, v in enumerate(bools + [False]):  # sentinel to flush
+        if v and s is None:
+            s = i
+        elif (not v) and s is not None:
+            segs.append((s, i-1))
+            s = None
+    return segs
+
+def find_rectangles(
+    df: pd.DataFrame,
+    min_header_cells: int = 3,
+    gap_rows: int = 1,           # allow up to 1 completely blank row inside a table
+    min_rows: int = 2,           # at least header + 1 data row
+    outside_tolerance: int = 1,
+) -> List[Tuple[int, int, int, int]]:
     """
-    Return list of (r0, r1, c0, c1, title_evidence) 0-based rectangles.
-    If the first row of the trimmed subtable has exactly one non-empty cell,
-    use that cell as title_evidence and skip that row (advance r0 by 1).
+    - A header row is any row with >= min_header_cells non-empty cells.
+    - Split horizontally on header gaps: each contiguous header segment is a table's column window.
+    - All segments that start on the SAME header row share the SAME vertical extent (shared_r1).
+      We compute shared_r1 using the UNION of all segment windows:
+        * If any segment window has inside data -> keep going.
+        * Blank rows are tolerated up to `gap_rows`.
+        * Rows with data only OUTSIDE all segment windows:
+            - if count <= outside_tolerance -> treat as "noise" (counts against gap_rows)
+            - else -> stop.
+    - Emit a rectangle per segment using (r0, shared_r1, c0, c1).
     """
-    mask = df.notna()
-    non_empty_rows = mask.any(axis=1).to_list()
-    row_blocks: List[Tuple[int, int]] = []
-    start = None
-    for i, val in enumerate(non_empty_rows + [False]):
-        if val and start is None:
-            start = i
-        elif not val and start is not None:
-            row_blocks.append((start, i - 1))
-            start = None
+    nrows, ncols = df.shape
+    rects: List[Tuple[int,int,int,int]] = []
+    r = 0
 
-    rects: List[Tuple[int, int, int, int, Optional[str]]] = []
-    for r0, r1 in row_blocks:
-        block = df.iloc[r0 : r1 + 1, :]
-        non_empty_cols = block.notna().any(axis=0).to_list()
-        cstart = None
-        for j, val in enumerate(non_empty_cols + [False]):
-            if val and cstart is None:
-                cstart = j
-            elif not val and cstart is not None:
-                cend = j - 1
-                sub = block.iloc[:, cstart : cend + 1]
-                sub_mask = sub.notna()
-                if not sub_mask.values.any():
-                    cstart = None
-                    continue
+    while r < nrows:
+        row_vals = [to_str(v) for v in df.iloc[r, :]]
+        header_bools = [v != "" for v in row_vals]
 
-                # trim borders
-                top = 0
-                while top < sub.shape[0] and not sub_mask.iloc[top].any():
-                    top += 1
-                bottom = sub.shape[0] - 1
-                while bottom >= 0 and not sub_mask.iloc[bottom].any():
-                    bottom -= 1
-                left = 0
-                while left < sub.shape[1] and not sub_mask.iloc[:, left].any():
-                    left += 1
-                right = sub.shape[1] - 1
-                while right >= 0 and not sub_mask.iloc[:, right].any():
-                    right -= 1
+        # contiguous header segments with sufficient width
+        segs = [seg for seg in _contiguous_segments(header_bools)
+                if (seg[1] - seg[0] + 1) >= min_header_cells]
 
-                if bottom >= top and right >= left:
-                    # compute absolute coords
-                    R0 = r0 + top
-                    R1 = r0 + bottom
-                    C0 = cstart + left
-                    C1 = cstart + right
+        if not segs:
+            r += 1
+            continue
 
-                    # inspect the first row of the trimmed subtable
-                    first_row = sub.iloc[top:top+1, left:right+1]
+        # ---- PASS 1: compute shared_r1 for ALL segments from this header row
+        r0 = r
+        shared_r1 = r
+        blanks_run = 0
 
-                    # better way to do this?
-                    vals = [to_str(x) for x in first_row.values.flatten()]
-                    non_empty_vals = [v for v in vals if v != ""]
+        # Precompute union mask function
+        def row_inside_any_segment(vals: List[str]) -> bool:
+            # inside if ANY non-empty value falls in ANY segment window
+            for (c0, c1) in segs:
+                for j in range(c0, c1 + 1):
+                    if vals[j] != "":
+                        return True
+            return False
 
-                    if len(non_empty_vals) == 1:
-                        # Single label row: bump start down by 1
-                        R0 += 1  # equivalent to top += 1 in absolute coords
-                    # ensure still meets size constraints after possible skip
-                    if (R1 - R0 + 1) >= min_rows and (C1 - C0 + 1) >= min_cols:
-                        print("new rec found", R0, R1, C0, C1)
-                        rects.append((R0, R1, C0, C1))
-                cstart = None
+        rr = r + 1
+        while rr < nrows:
+            vals = [to_str(v) for v in df.iloc[rr, :]]
+            row_non_empty_idx = [j for j, v in enumerate(vals) if v != ""]
+            row_any = len(row_non_empty_idx) > 0
+            inside_any_union = row_inside_any_segment(vals)
+
+            if inside_any_union:
+                shared_r1 = rr
+                blanks_run = 0
+            else:
+                if not row_any:
+                    # fully blank row -> tolerate up to gap_rows
+                    blanks_run += 1
+                    if blanks_run <= gap_rows:
+                        shared_r1 = rr
+                    else:
+                        break
+                else:
+                    # data exists but ONLY outside all segments
+                    outside_count = len(row_non_empty_idx)
+                    if outside_count <= outside_tolerance:
+                        # tolerate as "noise"
+                        blanks_run += 1
+                        if blanks_run <= gap_rows:
+                            shared_r1 = rr
+                        else:
+                            break
+                    else:
+                        # significant outside data -> stop
+                        break
+            rr += 1
+
+        # ---- PASS 2: emit a rect for each segment with the SAME shared_r1
+        for (c0, c1) in segs:
+            if (shared_r1 - r0 + 1) >= min_rows:
+                print("new rec found", r0, shared_r1, c0, c1)
+                rects.append((r0, shared_r1, c0, c1))
+
+        # advance to the row after the deepest shared table
+        r = shared_r1 + 1
+
     return rects
-
-
 # ---------- HEADER INFERENCE ----------
 def infer_header_depths(df: pd.DataFrame) -> Tuple[int, int]:
     """
@@ -176,7 +210,13 @@ def _parse_unit_scale(text: str) -> Optional[Tuple[str, float]]:
 def detect_units_and_scale(full_sheet: pd.DataFrame,
                            rect: Tuple[int, int, int, int]) -> Dict[str, Any]:
     """
-    Table-local unit/scale detection with inline overrides.
+    Simple, priority-based unit/scale detection for a table slice.
+
+    PRIORITY (high → low):
+      1) ROW HEADER: first column text in each data row (applies to that row to the right)
+      2) SECOND ROW (relative index 1): scan only to the LEFT of each column and
+         pick the nearest/last unit hint (applies downward for that column to the right)
+      3) TOP-LEFT DEFAULT: small TL window of the table (fallback)
 
     Returns:
       {
@@ -185,22 +225,17 @@ def detect_units_and_scale(full_sheet: pd.DataFrame,
             {'r': <abs_row>, 'c': <abs_col>, 'unit': <str>, 'scale': <float>, 'evidence': <str>}
         ]
       }
-
-    Semantics:
-    - default applies to the entire table.
-    - each override applies to any data cell whose absolute (row >= r and col >= c).
-      If multiple overrides match, use the one with the greatest (r, then c) — i.e., the
-      most specific bottom-right anchor.
     """
     r0, r1, c0, c1 = rect
     table = full_sheet.iloc[r0:r1+1, c0:c1+1]
 
+    # -------- helper: parse TL default (low priority) --------
     def tl_strings(max_rows=3, max_cols=3) -> List[str]:
         sub = table.iloc[:min(max_rows, table.shape[0]), :min(max_cols, table.shape[1])]
-        vals = [str(x).strip() for x in sub.values.flatten() if isinstance(x, (str, np.str_)) and str(x).strip()]
+        vals = [str(x).strip() for x in sub.values.flatten()
+                if isinstance(x, (str, np.str_)) and str(x).strip()]
         return vals
 
-    # 1) DEFAULT: look only at the table’s top-left area (not global)
     default_unit, default_scale, default_evidence = "", 1.0, ""
     for snippet in tl_strings():
         parsed = _parse_unit_scale(snippet)
@@ -209,73 +244,74 @@ def detect_units_and_scale(full_sheet: pd.DataFrame,
             default_evidence = snippet
             break
     if default_unit == "" and default_evidence == "":
-        # Fallback: if we see any '$' in TL, assume USD, else leave blank
         for snippet in tl_strings():
             if "$" in snippet or "USD" in snippet.upper():
                 default_unit, default_scale, default_evidence = "USD", 1.0, snippet
                 break
 
-    # 2) INLINE OVERRIDES:
-    # Heuristics to find unit “anchor” cells *inside the table* that define units for
-    # everything beneath/to-the-right.
-    # We scan the first few header-like rows/cols of the table to avoid false positives.
-    # You can adjust these caps if needed.
-    scan_header_rows = min(6, table.shape[0])
-    scan_header_cols = min(6, table.shape[1])
-
     overrides: List[Dict[str, Any]] = []
 
-    def looks_headerish_row(i: int) -> bool:
-        # A row is header-ish if most non-empty cells are non-numeric
-        row = table.iloc[i, :]
-        vals = [str(x).strip() for x in row if str(x).strip()]
-        if not vals:
-            return False
-        numericish = sum(1 for x in vals if re.match(r"^\(?-?\d{1,3}(?:,\d{3})*(?:\.\d+)?\)?%?$", x))
-        return (len(vals) - numericish) >= 0.6 * len(vals)
+    # ----------------------------------------------------------------
+    # (1) ROW HEADER priority
+    # For each data row (i >= 1), check the row-header cell (col 0).
+    # If it contains a unit/scale, apply to that row for columns to the right.
+    # Anchor at (abs_r = r0+i, abs_c = c0+1) so it affects cells with col >= c0+1 only.
+    # ----------------------------------------------------------------
+    if table.shape[0] >= 2 and table.shape[1] >= 2:
+        for i in range(1, table.shape[0]):  # data rows, since row 0 is col headers
+            cell = table.iat[i, 0]
+            if isinstance(cell, (str, np.str_)):
+                s = cell.strip()
+                if s:
+                    parsed = _parse_unit_scale(s)
+                    if parsed:
+                        unit_symbol, scale = parsed
+                        overrides.append({
+                            'r': r0 + i,
+                            'c': c0 + 1,   # start from first data column
+                            'unit': unit_symbol,
+                            'scale': float(scale),
+                            'evidence': s
+                        })
 
-    def looks_headerish_col(j: int) -> bool:
-        col = table.iloc[:, j]
-        vals = [str(x).strip() for x in col if str(x).strip()]
-        if not vals:
-            return False
-        numericish = sum(1 for x in vals if re.match(r"^\(?-?\d{1,3}(?:,\d{3})*(?:\.\d+)?\)?%?$", x))
-        return (len(vals) - numericish) >= 0.6 * len(vals)
+    # ----------------------------------------------------------------
+    # (2) SECOND ROW (relative row index 1), left-of-column priority
+    # For each data column j>=1, look leftwards across row 1 (second row).
+    # Use the nearest (rightmost) unit hint found at or to the left of j.
+    # Anchor at (abs_r = r0+1, abs_c = c0+j) so it applies downward for that column window.
+    # ----------------------------------------------------------------
+    if table.shape[0] >= 2 and table.shape[1] >= 2:
+        i = 1  # second row (relative)
+        row_vals = [table.iat[i, jj] for jj in range(table.shape[1])]
+        # precompute nearest-left unit hint for every column
+        nearest_left_unit: List[Optional[Tuple[str, float, str]]] = [None] * table.shape[1]
+        last_hint: Optional[Tuple[str, float, str]] = None
+        for jj in range(table.shape[1]):
+            cell = row_vals[jj]
+            if isinstance(cell, (str, np.str_)):
+                s = cell.strip()
+                if s:
+                    parsed = _parse_unit_scale(s)
+                    if parsed:
+                        u, sc = parsed
+                        last_hint = (u, float(sc), s)
+            nearest_left_unit[jj] = last_hint
 
-    headerish_rows = {i for i in range(scan_header_rows) if looks_headerish_row(i)}
-    headerish_cols = {j for j in range(scan_header_cols) if looks_headerish_col(j)}
-
-    # Candidate anchors = cells in header-ish rows/cols with a unit hint,
-    # especially if the rest of the row/col is sparse (“one record that defines a unit”).
-    for i in range(min(scan_header_rows, table.shape[0])):
-        for j in range(min(scan_header_cols, table.shape[1])):
-            txt = table.iat[i, j]
-            if not isinstance(txt, (str, np.str_)):
+        # Emit overrides for data columns only (>=1) where a hint exists to the left
+        for j in range(1, table.shape[1]):
+            hint = nearest_left_unit[j]
+            if hint is None:
                 continue
-            s = txt.strip()
-            if not s:
-                continue
-            parsed = _parse_unit_scale(s)
-            if not parsed:
-                continue
+            unit_symbol, scale, evidence = hint
+            overrides.append({
+                'r': r0 + 1,      # second row is the anchor (applies downward)
+                'c': c0 + j,      # this column (and to the right due to >= in resolver)
+                'unit': unit_symbol,
+                'scale': float(scale),
+                'evidence': evidence
+            })
 
-            # Sparsity cue: the row or column has very few non-empty cells => likely a lone unit marker
-            row_vals = [str(x).strip() for x in table.iloc[i, :].tolist() if str(x).strip()]
-            col_vals = [str(x).strip() for x in table.iloc[:, j].tolist() if str(x).strip()]
-            row_sparse = len(row_vals) <= max(1, math.ceil(0.1 * table.shape[1]))
-            col_sparse = len(col_vals) <= max(1, math.ceil(0.1 * table.shape[0]))
-
-            if (i in headerish_rows or j in headerish_cols) or row_sparse or col_sparse:
-                unit_symbol, scale = parsed
-                overrides.append({
-                    'r': r0 + i,            # absolute row in sheet
-                    'c': c0 + j,            # absolute col in sheet
-                    'unit': unit_symbol,
-                    'scale': float(scale),
-                    'evidence': s
-                })
-
-    # Sort overrides by (r, c) so “nearest bottom-right” is chosen last when resolving
+    # Sort by (r, c) so the resolver picks the most specific (latest) match
     overrides.sort(key=lambda x: (x['r'], x['c']))
 
     return {
@@ -340,6 +376,55 @@ def parse_number_with_status(cell, unit_symbol: str):
         return None, "non_numeric"
 
 # ---------- HEADER PATH BUILDING ----------
+YEAR_RE = re.compile(r"^\s*(\d{4})(?:[-/].*)?$")
+
+def _parse_year(cell: object) -> Optional[int]:
+    """
+    Try to parse a header cell to a year:
+      - '2024-12-31', '2024/12/31', '2024-12-31 0:00:00' -> 2024
+      - Excel datetimes / pandas Timestamps -> year
+      - '2024' -> 2024
+    Returns None if not parseable.
+    """
+    if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+        return None
+    s = str(cell).strip()
+    m = YEAR_RE.match(s)
+    if m:
+        return int(m.group(1))
+    # try pandas to_datetime for true datetime values
+    try:
+        dt = pd.to_datetime(cell, errors="coerce")
+        if pd.notna(dt):
+            return int(dt.year)
+    except Exception:
+        pass
+    return None
+    
+def normalize_year_header_segments(headers: List[str], min_run: int = 3) -> List[str]:
+    """
+    For each contiguous segment where ALL cells are parseable to a year
+    and the sequence increases strictly by +1 between columns, replace
+    those headers with just the year string. Leave other headers as-is.
+
+    Only triggers when the pattern *confirms* yearly increment (length >= min_run).
+    """
+    years = [_parse_year(h) for h in headers]
+    parseable = [y is not None for y in years]
+    out = headers[:]  # copy
+
+    for start, end in _contiguous_segments(parseable):
+        seg_years = years[start:end+1]
+        if len(seg_years) < min_run:
+            continue
+        # confirm strict +1 increments across the whole segment
+        diffs = [b - a for a, b in zip(seg_years, seg_years[1:])]
+        if all(d == 1 for d in diffs):
+            for i in range(start, end + 1):
+                out[i] = str(years[i])
+        # else: leave untouched (could be monthly or mixed)
+    return out
+
 def build_header_paths(table_df: pd.DataFrame, header_rows: int, header_cols: int) -> Tuple[List[str], List[str]]:
     """
     Create column header labels and row header labels by concatenating header tiers.
@@ -352,7 +437,7 @@ def build_header_paths(table_df: pd.DataFrame, header_rows: int, header_cols: in
             parts.append(to_str(table_df.iat[i, j]))
         label = " | ".join([p for p in parts if p])
         col_headers.append(label)
-
+    col_headers = normalize_year_header_segments(col_headers, min_run=2)
     # Row headers
     row_headers: List[str] = []
     for i in range(table_df.shape[0]):
@@ -361,7 +446,6 @@ def build_header_paths(table_df: pd.DataFrame, header_rows: int, header_cols: in
             parts.append(to_str(table_df.iat[i, j]))
         label = " | ".join([p for p in parts if p])
         row_headers.append(label)
-    print(row_headers, col_headers)
     return col_headers, row_headers
 
 def detect_generic_sheet_heading(full_sheet: pd.DataFrame) -> str:
@@ -395,10 +479,8 @@ def detect_inferred_table_name(full_sheet: pd.DataFrame, rect: Tuple[int,int,int
     r0, r1, c0, c1 = rect
 
     # 1) direct cell above top-left
-    print("inferring table name", r0, r1, c0,c1)
     if r0 - 1 >= 0:
         above_direct = to_str(full_sheet.iat[r0-1, c0])
-        print("above direct", above_direct)
         if above_direct:
             return above_direct
 
@@ -419,21 +501,13 @@ def detect_inferred_table_name(full_sheet: pd.DataFrame, rect: Tuple[int,int,int
 
 
 # ---------- FACT EXTRACTION ----------
-def extract_facts_from_table(full_sheet, rect, sheet_name, file_name, generic_heading=""):
+def extract_facts_from_table(full_sheet, rect, sheet_name, file_name, generic_heading="", ):
     r0, r1, c0, c1 = rect
-    print(f"Extracting facts from rect R{r0+1}-{r1+1}, C{c0+1}-{c1+1}")
     table = full_sheet.iloc[r0:r1+1, c0:c1+1].copy()
 
     # units (dict-based)
     meta = detect_units_and_scale(full_sheet, rect)
-    print(f"  Default unit={meta['default']['unit']} scale={meta['default']['scale']} evidence='{meta['default']['evidence']}'")
-    if meta['overrides']:
-        print(f"  Found {len(meta['overrides'])} inline unit override(s): {[ov['evidence'] for ov in meta['overrides']]}")
-
     # inferred table name
-    inferred_name = detect_inferred_table_name(full_sheet, rect, generic_heading)
-    if inferred_name:
-        print(f"  Inferred table name: '{inferred_name}'")
 
     # headers
     header_rows, header_cols = infer_header_depths(table)
@@ -464,9 +538,8 @@ def extract_facts_from_table(full_sheet, rect, sheet_name, file_name, generic_he
                 "unit": unit_symbol,
                 "scale": scale,
                 "value_real": val * scale,
-                "parse_status": status,                
-                "inferred_table_name": inferred_name, 
+                "parse_status": status,     
+                "inferred_table_name": 'none'   
             })
 
-    print(f"  Extracted {len(facts)} facts; skipped -> {skipped_counts}")
     return facts

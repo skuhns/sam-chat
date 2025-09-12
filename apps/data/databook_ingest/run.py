@@ -54,7 +54,7 @@ def process_workbooks(xlsx_paths: List[str], sqlite_path: str) -> None:
             # Extract & insert per sheet to keep memory bounded
             all_facts: List[Dict[str, Any]] = []
             for rect in rects:
-                facts = extract_facts_from_table(df, rect, sheet_name, fname, generic_heading)
+                facts = extract_facts_from_table(df, rect, sheet_name, fname, generic_heading )
                 all_facts.extend(facts)
 
             if all_facts:
@@ -63,6 +63,7 @@ def process_workbooks(xlsx_paths: List[str], sqlite_path: str) -> None:
                 print(f"  Inserted {len(all_facts)} facts from sheet '{sheet_name}'")
             else:
                 print("  No facts extracted from this sheet.")
+            
 
     # done seperately to show that these can be updated and ran as periodic jobs to improve data
     tagged_vals = populate_known_facts(conn, score_threshold=83)

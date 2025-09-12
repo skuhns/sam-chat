@@ -9,7 +9,7 @@ from .utils import to_str
 # --- Canonical metrics with synonym variants ---
 KNOWN_VALUES: Dict[str, List[str]] = {
     "Reported EBITDA": [
-        "reported ebitda","ebitda (reported)","ebitda - reported","ebitda reported","ebitda"
+        "reported ebitda","ebitda (reported)","ebitda - reported","ebitda reported"
     ],
     "Reported EBITDA %": [
         "reported ebitda %","ebitda margin","ebitda %","ebitda % of sales","ebitda percentage"
