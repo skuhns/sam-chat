@@ -1,5 +1,4 @@
 import { z } from "zod";
-export const runtime = "nodejs";
 import path from "path";
 import Database from "better-sqlite3";
 import { FACTS_TABLE, KNOWN_FACTS_TABLE, KNOWN_VALUES } from "./constants";
@@ -11,7 +10,7 @@ type QueryParams = {
   unit?: string;
 };
 
-export type KnownFactRow = {
+type KnownFactRow = {
   fact_id: number;
   file: string;
   sheet: string;
@@ -23,7 +22,7 @@ export type KnownFactRow = {
   known_period: string | null;
 };
 
-export type FactRow = {
+type FactRow = {
   fact_id: number;
   file: string;
   sheet: string;
@@ -34,7 +33,7 @@ export type FactRow = {
   raw_text: string | null;
 };
 
-export const fetchParams = z.object({
+const fetchParams = z.object({
   values: z.array(z.string()),
   source: z.string().optional(),
   periods: z.array(z.string()).optional(),
@@ -184,7 +183,7 @@ export async function GET(request: Request) {
 }
 
 // ---------------- DB helpers ----------------
-export function fetchFact({ dbPath, value, period, unit }: QueryParams): FactRow[] {
+function fetchFact({ dbPath, value, period, unit }: QueryParams): FactRow[] {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 
   let sql = `
@@ -220,7 +219,7 @@ export function fetchFact({ dbPath, value, period, unit }: QueryParams): FactRow
   return rows;
 }
 
-export function fetchKnownValue({ dbPath, value, period }: QueryParams): KnownFactRow[] {
+function fetchKnownValue({ dbPath, value, period }: QueryParams): KnownFactRow[] {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 
   let sql = `

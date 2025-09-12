@@ -1,29 +1,39 @@
-Databook Ingest
+Databook Ingestion + Query System
 
-This project ingests messy Excel “databooks” (financial statements, P&L sheets, etc.) into a normalized SQLite database so the data can be queried consistently.
+This project ingests messy Excel databooks into a structured SQLite database and exposes them through a Next.js chatbot. The goal is to let an LLM answer questions like:
+• “What was gross profit margin % over the last 3 years?”
+• “How does Adjusted EBITDA compare to Reported EBITDA, based on QoE adjustments?”
 
-It was designed for interview purposes, but the approach is production-inspired: we preserve lineage, handle odd formatting, and keep the pipeline modular.
+Approach
+• Ingestion (Python):
+• Detects table blocks in Excel sheets, accounting for broken rows, in row unit definitions, and horrid formatting
+• Normalizes column headers, collapsing year-end datetimes (e.g. 2022-12-31 0:00:00) to years when they form a confirmed sequence.
+• Extracts facts with row/column headers, units (USD, %), and source file, sheet, and cell for full traceability.
+• Normalization:
+• Fuzzy-maps financial KPIs (e.g., “Net Sales”, “Adjusted EBITDA”, “Working Capital”) to canonical values.
+• Stores both raw facts and pre-computed known values for faster and more accurate queries
+• Storage:
+• SQLite database committed with the repo for portability and easy local use.
+• Query Layer (Next.js / TypeScript):
+• value_fetch tool tries known KPIs first, falls back to fuzzy row/col searches.
 
-⸻
+Assumptions
+• There is no manual altering or cleanup of the documents before ingestion
+• Conflicting results across databooks are resolved by prioritizing Databook_One_SANITIZED.xlsx
+• No sheets or files have the same name.
+• Storage is cheap, and we prefer to duplicate. This is not a storage efficient solution. SQLite is in place for ease of dev/test. Snowflake would be a good candidate for storage here.
 
-How it works
+How to Run
 
-Parsing strategy: 1. Load sheets as raw text
-We don’t let Pandas guess headers — every cell comes in as a string. This ensures we don’t lose blanks, #N/A, or special formatting. 2. Segment into tables
-• Scan for non-empty row blocks, then within them detect non-empty column blocks.
-• Trim empty borders.
-• Each detected rectangle is treated as a candidate table. 3. Header inference
-• Identify header rows and columns by checking if most cells are text (vs. numeric).
-• Build “header paths” by concatenating multi-row/col headers so each data cell can be labeled. 4. Units & scales
-• Look at the top-left of the table for hints like "$ in thousands", "millions", "%".
-• Allow inline overrides: if a unit marker appears inside the header, everything beneath/to the right adopts that scale.
-• Store both the raw text and the normalized numeric value (value_real). 5. Table naming
-• If the first row of a table has only one text cell, we treat it as the table name.
-• Otherwise, check the cell above the table’s top-left, or fall back to a generic sheet heading. 6. Value parsing
-• Handle parentheses as negatives, commas, percents, dashes as missing, and Excel error codes.
-• Store both the parsed number and a parse_status (ok, blank, error_code, dash, non_numeric). 7. Write to SQLite
-Each fact becomes a row with:
-• lineage (file, sheet, row_idx, col_idx),
-• labels (row_header, col_header, inferred_table_name),
-• units & scale,
-• raw text and parsed value.
+    The project is available at
+
+    1.	Ingest the databooks
+    under `apps/data` activate the python env and run script.
+    ```
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python3 -m databook_ingest.run
+    ```
+    2. Inspect `databooks.sqlite` in the tool of your choice.
+    3. Drag `databooks.sqlite` into `apps/web/db`
+    4. Run the local Nest.js app `npm install` `npm run dev`
